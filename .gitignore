@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# SQLite database (auto-created on first run)
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Uploaded PDFs (not committed — use a volume/cloud storage in prod)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Vite build output
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
