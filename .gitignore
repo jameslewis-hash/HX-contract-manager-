@@ -13,8 +13,8 @@ backend/*.db-wal
 backend/uploads/*
 !backend/uploads/.gitkeep
 
-# Vite build output
-frontend/dist/
+# Vite build output committed so Railway can serve it
+# frontend/dist/
 
 # Logs
 *.log
