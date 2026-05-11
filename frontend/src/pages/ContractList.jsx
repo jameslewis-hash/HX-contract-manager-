@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search, Plus, FileText, Calendar, User, ChevronRight, Briefcase } from 'lucide-react';
+import { Search, Plus, FileText, Calendar, User, ChevronRight, Briefcase, ArrowUpDown } from 'lucide-react';
 import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +11,35 @@ const FILTERS = [
   { value: 'expiring_soon', label: 'Expiring Soon' },
   { value: 'expired', label: 'Expired' },
 ];
+
+const SORT_OPTIONS = [
+  { value: 'expiry_asc', label: 'Expiry date (soonest first)' },
+  { value: 'expiry_desc', label: 'Expiry date (latest first)' },
+  { value: 'title_asc', label: 'A → Z' },
+  { value: 'title_desc', label: 'Z → A' },
+  { value: 'value_desc', label: 'Value (highest first)' },
+  { value: 'value_asc', label: 'Value (lowest first)' },
+];
+
+function sortContracts(contracts, sort) {
+  const sorted = [...contracts];
+  switch (sort) {
+    case 'expiry_asc':
+      return sorted.sort((a, b) => new Date(a.end_date) - new Date(b.end_date));
+    case 'expiry_desc':
+      return sorted.sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
+    case 'title_asc':
+      return sorted.sort((a, b) => a.title.localeCompare(b.title));
+    case 'title_desc':
+      return sorted.sort((a, b) => b.title.localeCompare(a.title));
+    case 'value_desc':
+      return sorted.sort((a, b) => (b.contract_value || 0) - (a.contract_value || 0));
+    case 'value_asc':
+      return sorted.sort((a, b) => (a.contract_value || 0) - (b.contract_value || 0));
+    default:
+      return sorted;
+  }
+}
 
 function formatValue(val) {
   if (!val) return null;
@@ -36,10 +65,13 @@ export default function ContractList() {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('expiry_asc');
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
 
   const activeFilter = searchParams.get('status') || 'all';
+
+  const sortedContracts = useMemo(() => sortContracts(contracts, sort), [contracts, sort]);
 
   useEffect(() => {
     setLoading(true);
@@ -63,7 +95,7 @@ export default function ContractList() {
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 900, color: '#fff', marginBottom: 4 }}>All Contracts</h1>
           <p style={{ color: '#b0a0cc', fontSize: 14 }}>
-            {contracts.length} contract{contracts.length !== 1 ? 's' : ''} found
+            {sortedContracts.length} contract{sortedContracts.length !== 1 ? 's' : ''} found
           </p>
         </div>
         {user?.role === 'editor' && (
@@ -89,10 +121,10 @@ export default function ContractList() {
         )}
       </div>
 
-      {/* Search + Filters */}
+      {/* Search + Filters + Sort */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* Search */}
-        <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: 400 }}>
+        <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360 }}>
           <Search size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#7060a0' }} />
           <input
             type="text"
@@ -113,7 +145,7 @@ export default function ContractList() {
         </div>
 
         {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -133,6 +165,34 @@ export default function ContractList() {
               {f.label}
             </button>
           ))}
+        </div>
+
+        {/* Sort */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+          <ArrowUpDown size={14} color="#7060a0" />
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            style={{
+              padding: '8px 32px 8px 12px',
+              background: '#231540',
+              border: '1px solid #3d2870',
+              borderRadius: 8,
+              color: '#b0a0cc',
+              fontSize: 13,
+              fontFamily: 'Nunito, sans-serif',
+              fontWeight: 700,
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237060a0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 10px center',
+            }}
+          >
+            {SORT_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -159,7 +219,7 @@ export default function ContractList() {
           gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
           gap: 16,
         }}>
-          {contracts.map((c) => {
+          {sortedContracts.map((c) => {
             const daysLabel = daysUntilLabel(c.end_date, c.status);
             return (
               <Link
