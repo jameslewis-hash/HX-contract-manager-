@@ -5,7 +5,6 @@ const fs = require('fs');
 const { getDb, computeStatus } = require('../db');
 const { authenticateToken, requireEditor } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
-const pdfParse = require('pdf-parse');
 
 const router = express.Router();
 
@@ -55,6 +54,7 @@ router.post('/extract-dates', authenticateToken, extractUpload.single('pdf'), as
 
   let text;
   try {
+    const pdfParse = require('pdf-parse');
     const data = await pdfParse(req.file.buffer);
     text = data.text;
   } catch (err) {
