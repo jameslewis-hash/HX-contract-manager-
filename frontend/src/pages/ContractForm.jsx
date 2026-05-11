@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, X, FileText, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, X, FileText, AlertCircle, Link2 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -47,6 +47,7 @@ export default function ContractForm() {
     end_date: '',
     owner_name: '',
     notes: '',
+    contract_link: '',
   });
   const [pdfFile, setPdfFile] = useState(null);
   const [existingPdf, setExistingPdf] = useState(null);
@@ -72,6 +73,7 @@ export default function ContractForm() {
           end_date: c.end_date || '',
           owner_name: c.owner_name || '',
           notes: c.notes || '',
+          contract_link: c.contract_link || '',
         });
         setExistingPdf(c.pdf_path);
       })
@@ -261,7 +263,7 @@ export default function ContractForm() {
           </div>
         </div>
 
-        {/* PDF Upload */}
+        {/* Contract Document */}
         <div style={{
           background: '#231540',
           border: '1px solid #3d2870',
@@ -270,7 +272,32 @@ export default function ContractForm() {
           marginBottom: 24,
         }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: '#fff' }}>Contract Document</h2>
-          <p style={{ fontSize: 13, color: '#7060a0', marginBottom: 20 }}>Upload a PDF version of the signed contract.</p>
+          <p style={{ fontSize: 13, color: '#7060a0', marginBottom: 20 }}>Upload a PDF and/or add a link to the contract document.</p>
+
+          {/* Contract URL */}
+          <div style={{ marginBottom: 20 }}>
+            <Field label="Contract URL / Link">
+              <div style={{ position: 'relative' }}>
+                <Link2 size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#7060a0', pointerEvents: 'none' }} />
+                <input
+                  name="contract_link"
+                  type="url"
+                  value={form.contract_link}
+                  onChange={handleChange}
+                  placeholder="https://drive.google.com/..."
+                  style={{ ...inputStyle, paddingLeft: 34 }}
+                  onFocus={e => e.target.style.borderColor = '#542E91'}
+                  onBlur={e => e.target.style.borderColor = '#3d2870'}
+                />
+              </div>
+            </Field>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <div style={{ flex: 1, height: 1, background: '#3d2870' }} />
+            <span style={{ fontSize: 11, color: '#7060a0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>or upload PDF</span>
+            <div style={{ flex: 1, height: 1, background: '#3d2870' }} />
+          </div>
 
           {existingPdf && !pdfFile && (
             <div style={{

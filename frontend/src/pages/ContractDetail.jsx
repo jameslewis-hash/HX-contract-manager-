@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, Calendar, User, Briefcase, DollarSign, FileText, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Calendar, User, Briefcase, DollarSign, FileText, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -235,6 +235,54 @@ export default function ContractDetail() {
           </div>
         )}
       </div>
+
+      {/* Contract Link */}
+      {contract.contract_link && (
+        <div style={{
+          background: '#231540',
+          border: '1px solid #3d2870',
+          borderRadius: 12,
+          padding: '20px',
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ExternalLink size={16} color="#FDDC06" />
+            <div>
+              <div style={{ fontSize: 11, color: '#7060a0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Contract Link</div>
+              <span style={{ fontSize: 13, color: '#b0a0cc', wordBreak: 'break-all' }}>{contract.contract_link}</span>
+            </div>
+          </div>
+          <a
+            href={contract.contract_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '9px 18px',
+              background: '#542E91',
+              color: '#FDDC06',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 800,
+              textDecoration: 'none',
+              flexShrink: 0,
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#6B3CB5'}
+            onMouseLeave={e => e.currentTarget.style.background = '#542E91'}
+          >
+            <ExternalLink size={14} />
+            Open Link
+          </a>
+        </div>
+      )}
 
       {/* PDF Viewer */}
       <div style={{
