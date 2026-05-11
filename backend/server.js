@@ -29,17 +29,13 @@ app.use('/api/contracts', contractRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
-// Serve built frontend
-const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
-if (require('fs').existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
-  // SPA fallback — serve index.html for all non-API routes
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
-      res.sendFile(path.join(frontendDist, 'index.html'));
-    }
-  });
-}
+// Serve built frontend from backend/public/
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+// SPA fallback — all non-API routes serve index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
 
 // Init DB on startup
 getDb();
