@@ -1,8 +1,14 @@
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'contract-manager.db');
+// Use DB_PATH env var so Railway Volume can provide a persistent path
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'contract-manager.db');
+
+// Ensure the directory exists (important when DB_PATH points to a volume)
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
 let db;
 
@@ -42,24 +48,20 @@ function initDb() {
     );
   `);
 
-  // Add contract_link column if it doesn't exist yet (migration)
-  try {
-    db.exec('ALTER TABLE contracts ADD COLUMN contract_link TEXT');
-  } catch {}
-
-  // Add partner contact columns if they don't exist yet (migration)
-  const partnerCols = [
-    'partner_name TEXT',
-    'partner_email TEXT',
-    'partner_position TEXT',
-    'partner_phone TEXT',
+  // Migrations — safe to run on every start, errors are ignored if column exists
+  const migrations = [
+    'ALTER TABLE contracts ADD COLUMN contract_link TEXT',
+    'ALTER TABLE contracts ADD COLUMN partner_name TEXT',
+    'ALTER TABLE contracts ADD COLUMN partner_email TEXT',
+    'ALTER TABLE contracts ADD COLUMN partner_position TEXT',
+    'ALTER TABLE contracts ADD COLUMN partner_phone TEXT',
   ];
-  for (const col of partnerCols) {
-    try { db.exec(`ALTER TABLE contracts ADD COLUMN ${col}`); } catch {}
+  for (const m of migrations) {
+    try { db.exec(m); } catch {}
   }
 
+  // Seed default users only — no dummy contract data
   seedUsers();
-  seedContracts();
 }
 
 function seedUsers() {
@@ -75,77 +77,6 @@ function seedUsers() {
   db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)').run(
     'Sarah Mitchell', 'viewer@holidayextras.com', viewerHash, 'viewer'
   );
-}
-
-function seedContracts() {
-  const count = db.prepare('SELECT COUNT(*) as c FROM contracts').get().c;
-  if (count > 0) return;
-
-  const contracts = [
-    {
-      title: 'Amadeus GDS Integration',
-      vendor: 'Amadeus IT Group',
-      contract_value: 125000,
-      start_date: '2024-01-15',
-      end_date: '2027-01-15',
-      notes: 'Global distribution system integration for flight and hotel bookings. Auto-renewal clause at 5% uplift.',
-      owner_name: 'James Lewis',
-    },
-    {
-      title: 'BDC Partnership Agreement',
-      vendor: 'Booking.com',
-      contract_value: 85000,
-      start_date: '2024-06-01',
-      end_date: '2026-10-30',
-      notes: 'White-label hotel inventory access and commission structure. 18% commission rate agreed.',
-      owner_name: 'Sarah Mitchell',
-    },
-    {
-      title: 'Microsoft Enterprise License',
-      vendor: 'Microsoft UK',
-      contract_value: 42000,
-      start_date: '2024-07-01',
-      end_date: '2027-06-30',
-      notes: 'Microsoft 365, Azure, and Power Platform enterprise agreement. Covers 350 seats.',
-      owner_name: 'Tom Richards',
-    },
-    {
-      title: 'HotelBeds API License',
-      vendor: 'HotelBeds Group',
-      contract_value: 36000,
-      start_date: '2023-07-01',
-      end_date: '2026-07-05',
-      notes: 'Access to HotelBeds accommodation inventory across Europe. Rate parity clause included.',
-      owner_name: 'Emily Torres',
-    },
-    {
-      title: 'Travel Insurance Services',
-      vendor: 'Allianz Global Assistance',
-      contract_value: 195000,
-      start_date: '2023-01-01',
-      end_date: '2026-06-20',
-      notes: 'White-label travel insurance products for Holiday Extras customers. Includes medical, cancellation and baggage cover.',
-      owner_name: 'James Lewis',
-    },
-    {
-      title: 'Legacy Payment Gateway',
-      vendor: 'WorldPay',
-      contract_value: 28000,
-      start_date: '2022-01-01',
-      end_date: '2025-12-01',
-      notes: 'Legacy payment processing contract — fully migrated to Stripe in Q4 2025. No renewal required.',
-      owner_name: 'Tom Richards',
-    },
-  ];
-
-  const insert = db.prepare(`
-    INSERT INTO contracts (title, vendor, contract_value, start_date, end_date, status, pdf_path, notes, owner_name)
-    VALUES (@title, @vendor, @contract_value, @start_date, @end_date, @status, @pdf_path, @notes, @owner_name)
-  `);
-
-  for (const c of contracts) {
-    insert.run({ ...c, status: computeStatus(c.end_date), pdf_path: null });
-  }
 }
 
 function computeStatus(endDate) {
