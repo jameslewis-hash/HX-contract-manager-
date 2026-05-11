@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, X, FileText, AlertCircle, Link2 } from 'lucide-react';
+import { ArrowLeft, Upload, X, FileText, AlertCircle, Link2, Sparkles, CheckCircle } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -54,6 +54,9 @@ export default function ContractForm() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState(null); // 'success' | 'partial' | 'error'
+  const [extractMessage, setExtractMessage] = useState('');
 
   useEffect(() => {
     if (user?.role !== 'editor') {
@@ -83,6 +86,48 @@ export default function ContractForm() {
 
   function handleChange(e) {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  }
+
+  async function handleExtractDates() {
+    if (!pdfFile) return;
+    setExtracting(true);
+    setExtractResult(null);
+    setExtractMessage('');
+
+    const data = new FormData();
+    data.append('pdf', pdfFile);
+
+    try {
+      const res = await api.post('/contracts/extract-dates', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const { start_date, end_date } = res.data;
+
+      if (start_date || end_date) {
+        setForm(f => ({
+          ...f,
+          ...(start_date ? { start_date } : {}),
+          ...(end_date ? { end_date } : {}),
+        }));
+        if (start_date && end_date) {
+          setExtractResult('success');
+          setExtractMessage('Start date and end date extracted successfully.');
+        } else {
+          setExtractResult('partial');
+          setExtractMessage(
+            start_date ? 'Start date found; end date not detected.' : 'End date found; start date not detected.'
+          );
+        }
+      } else {
+        setExtractResult('error');
+        setExtractMessage('No dates found in the document. Please enter them manually.');
+      }
+    } catch (err) {
+      setExtractResult('error');
+      setExtractMessage(err.response?.data?.error || 'Failed to extract dates. Please enter them manually.');
+    } finally {
+      setExtracting(false);
+    }
   }
 
   async function handleSubmit(e) {
@@ -317,27 +362,81 @@ export default function ContractForm() {
           )}
 
           {pdfFile ? (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '12px 14px',
-              background: 'rgba(34,197,94,0.08)',
-              border: '1px solid rgba(34,197,94,0.3)',
-              borderRadius: 8,
-            }}>
-              <FileText size={16} color="#22c55e" />
-              <span style={{ fontSize: 13, color: '#22c55e', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {pdfFile.name}
-              </span>
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '12px 14px',
+                background: 'rgba(34,197,94,0.08)',
+                border: '1px solid rgba(34,197,94,0.3)',
+                borderRadius: 8,
+                marginBottom: 12,
+              }}>
+                <FileText size={16} color="#22c55e" />
+                <span style={{ fontSize: 13, color: '#22c55e', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pdfFile.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setPdfFile(null); setExtractResult(null); setExtractMessage(''); }}
+                  style={{ background: 'none', color: '#b0a0cc', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Extract dates button */}
               <button
                 type="button"
-                onClick={() => setPdfFile(null)}
-                style={{ background: 'none', color: '#b0a0cc', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                onClick={handleExtractDates}
+                disabled={extracting}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  width: '100%',
+                  padding: '11px 16px',
+                  background: extracting ? 'rgba(84,46,145,0.2)' : 'rgba(84,46,145,0.15)',
+                  border: '1px solid #542E91',
+                  borderRadius: 8,
+                  color: extracting ? '#7060a0' : '#FDDC06',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: extracting ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.15s',
+                  marginBottom: extractResult ? 10 : 0,
+                }}
+                onMouseEnter={e => { if (!extracting) e.currentTarget.style.background = 'rgba(84,46,145,0.3)'; }}
+                onMouseLeave={e => { if (!extracting) e.currentTarget.style.background = 'rgba(84,46,145,0.15)'; }}
               >
-                <X size={14} />
+                <Sparkles size={14} />
+                {extracting ? 'Extracting dates with AI…' : 'Extract start & end dates from PDF'}
               </button>
-            </div>
+
+              {/* Extract result feedback */}
+              {extractResult && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: extractResult === 'error'
+                    ? 'rgba(239,68,68,0.08)'
+                    : extractResult === 'partial'
+                    ? 'rgba(245,158,11,0.08)'
+                    : 'rgba(34,197,94,0.08)',
+                  border: `1px solid ${extractResult === 'error' ? 'rgba(239,68,68,0.3)' : extractResult === 'partial' ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
+                  color: extractResult === 'error' ? '#ef4444' : extractResult === 'partial' ? '#f59e0b' : '#22c55e',
+                }}>
+                  {extractResult === 'success' ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
+                  {extractMessage}
+                </div>
+              )}
+            </>
           ) : (
             <label style={{
               display: 'flex',
