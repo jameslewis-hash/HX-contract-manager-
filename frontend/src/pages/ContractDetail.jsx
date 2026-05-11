@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, Calendar, User, Briefcase, DollarSign, FileText, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Calendar, User, Briefcase, DollarSign, FileText, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink, Users, Mail, Phone, BadgeCheck } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -235,6 +235,75 @@ export default function ContractDetail() {
           </div>
         )}
       </div>
+
+      {/* Partner Contact */}
+      {(contract.partner_name || contract.partner_email || contract.partner_position || contract.partner_phone) && (
+        <div style={{
+          background: '#231540',
+          border: '1px solid #3d2870',
+          borderRadius: 12,
+          padding: '20px 24px',
+          marginBottom: 20,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <Users size={15} color="#FDDC06" />
+            <span style={{ fontWeight: 800, fontSize: 15 }}>Partner Contact</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+            {contract.partner_name && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#7060a0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <User size={11} />
+                  Name
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{contract.partner_name}</div>
+              </div>
+            )}
+            {contract.partner_position && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#7060a0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <BadgeCheck size={11} />
+                  Position
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{contract.partner_position}</div>
+              </div>
+            )}
+            {contract.partner_email && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#7060a0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <Mail size={11} />
+                  Email
+                </div>
+                <a
+                  href={`mailto:${contract.partner_email}`}
+                  style={{ fontSize: 14, fontWeight: 600, color: '#FDDC06', textDecoration: 'none' }}
+                  onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                  onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                >
+                  {contract.partner_email}
+                </a>
+              </div>
+            )}
+            {contract.partner_phone && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#7060a0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <Phone size={11} />
+                  Phone
+                </div>
+                <a
+                  href={`tel:${contract.partner_phone}`}
+                  style={{ fontSize: 14, fontWeight: 600, color: '#FDDC06', textDecoration: 'none' }}
+                  onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                  onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                >
+                  {contract.partner_phone}
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Contract Link */}
       {contract.contract_link && (

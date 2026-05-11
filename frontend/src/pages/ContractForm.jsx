@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, X, FileText, AlertCircle, Link2, Sparkles, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Upload, X, FileText, AlertCircle, Link2, Sparkles, CheckCircle, Users } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -48,6 +48,10 @@ export default function ContractForm() {
     owner_name: '',
     notes: '',
     contract_link: '',
+    partner_name: '',
+    partner_email: '',
+    partner_position: '',
+    partner_phone: '',
   });
   const [pdfFile, setPdfFile] = useState(null);
   const [existingPdf, setExistingPdf] = useState(null);
@@ -77,6 +81,10 @@ export default function ContractForm() {
           owner_name: c.owner_name || '',
           notes: c.notes || '',
           contract_link: c.contract_link || '',
+          partner_name: c.partner_name || '',
+          partner_email: c.partner_email || '',
+          partner_position: c.partner_position || '',
+          partner_phone: c.partner_phone || '',
         });
         setExistingPdf(c.pdf_path);
       })
@@ -305,6 +313,73 @@ export default function ContractForm() {
                 />
               </Field>
             </div>
+          </div>
+        </div>
+
+        {/* Partner Contact */}
+        <div style={{
+          background: '#231540',
+          border: '1px solid #3d2870',
+          borderRadius: 12,
+          padding: '28px',
+          marginBottom: 20,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Users size={16} color="#FDDC06" />
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>Partner Contact</h2>
+          </div>
+          <p style={{ fontSize: 13, color: '#7060a0', marginBottom: 20 }}>The vendor's point of contact for this contract.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <Field label="Contact Name">
+              <input
+                name="partner_name"
+                value={form.partner_name}
+                onChange={handleChange}
+                placeholder="e.g. Sarah Jones"
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#542E91'}
+                onBlur={e => e.target.style.borderColor = '#3d2870'}
+              />
+            </Field>
+
+            <Field label="Position / Title">
+              <input
+                name="partner_position"
+                value={form.partner_position}
+                onChange={handleChange}
+                placeholder="e.g. Account Manager"
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#542E91'}
+                onBlur={e => e.target.style.borderColor = '#3d2870'}
+              />
+            </Field>
+
+            <Field label="Email Address">
+              <input
+                name="partner_email"
+                type="email"
+                value={form.partner_email}
+                onChange={handleChange}
+                placeholder="e.g. sarah@vendor.com"
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#542E91'}
+                onBlur={e => e.target.style.borderColor = '#3d2870'}
+              />
+            </Field>
+
+            <Field label="Phone Number">
+              <input
+                name="partner_phone"
+                type="tel"
+                value={form.partner_phone}
+                onChange={handleChange}
+                placeholder="e.g. +44 7700 900123"
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#542E91'}
+                onBlur={e => e.target.style.borderColor = '#3d2870'}
+              />
+            </Field>
           </div>
         </div>
 

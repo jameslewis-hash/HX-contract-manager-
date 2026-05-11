@@ -155,7 +155,8 @@ router.get('/:id', authenticateToken, (req, res) => {
 
 // POST create
 router.post('/', authenticateToken, requireEditor, upload.single('pdf'), (req, res) => {
-  const { title, vendor, contract_value, start_date, end_date, notes, owner_name, contract_link } = req.body;
+  const { title, vendor, contract_value, start_date, end_date, notes, owner_name, contract_link,
+          partner_name, partner_email, partner_position, partner_phone } = req.body;
 
   if (!title || !vendor || !start_date || !end_date) {
     return res.status(400).json({ error: 'title, vendor, start_date and end_date are required' });
@@ -163,8 +164,9 @@ router.post('/', authenticateToken, requireEditor, upload.single('pdf'), (req, r
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO contracts (title, vendor, contract_value, start_date, end_date, status, pdf_path, contract_link, notes, owner_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO contracts (title, vendor, contract_value, start_date, end_date, status, pdf_path, contract_link, notes, owner_name,
+      partner_name, partner_email, partner_position, partner_phone)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title, vendor,
     contract_value ? parseFloat(contract_value) : null,
@@ -173,7 +175,11 @@ router.post('/', authenticateToken, requireEditor, upload.single('pdf'), (req, r
     req.file ? req.file.filename : null,
     contract_link || null,
     notes || null,
-    owner_name || null
+    owner_name || null,
+    partner_name || null,
+    partner_email || null,
+    partner_position || null,
+    partner_phone || null,
   );
 
   res.status(201).json(db.prepare('SELECT * FROM contracts WHERE id = ?').get(result.lastInsertRowid));
@@ -185,7 +191,8 @@ router.put('/:id', authenticateToken, requireEditor, upload.single('pdf'), (req,
   const existing = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Contract not found' });
 
-  const { title, vendor, contract_value, start_date, end_date, notes, owner_name, contract_link } = req.body;
+  const { title, vendor, contract_value, start_date, end_date, notes, owner_name, contract_link,
+          partner_name, partner_email, partner_position, partner_phone } = req.body;
 
   let pdf_path = existing.pdf_path;
   if (req.file) {
@@ -201,7 +208,9 @@ router.put('/:id', authenticateToken, requireEditor, upload.single('pdf'), (req,
   db.prepare(`
     UPDATE contracts SET
       title = ?, vendor = ?, contract_value = ?, start_date = ?, end_date = ?,
-      status = ?, pdf_path = ?, contract_link = ?, notes = ?, owner_name = ?, updated_at = CURRENT_TIMESTAMP
+      status = ?, pdf_path = ?, contract_link = ?, notes = ?, owner_name = ?,
+      partner_name = ?, partner_email = ?, partner_position = ?, partner_phone = ?,
+      updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     title || existing.title,
@@ -214,6 +223,10 @@ router.put('/:id', authenticateToken, requireEditor, upload.single('pdf'), (req,
     contract_link !== undefined ? (contract_link || null) : existing.contract_link,
     notes !== undefined ? notes : existing.notes,
     owner_name !== undefined ? owner_name : existing.owner_name,
+    partner_name !== undefined ? (partner_name || null) : existing.partner_name,
+    partner_email !== undefined ? (partner_email || null) : existing.partner_email,
+    partner_position !== undefined ? (partner_position || null) : existing.partner_position,
+    partner_phone !== undefined ? (partner_phone || null) : existing.partner_phone,
     req.params.id
   );
 

@@ -42,6 +42,22 @@ function initDb() {
     );
   `);
 
+  // Add contract_link column if it doesn't exist yet (migration)
+  try {
+    db.exec('ALTER TABLE contracts ADD COLUMN contract_link TEXT');
+  } catch {}
+
+  // Add partner contact columns if they don't exist yet (migration)
+  const partnerCols = [
+    'partner_name TEXT',
+    'partner_email TEXT',
+    'partner_position TEXT',
+    'partner_phone TEXT',
+  ];
+  for (const col of partnerCols) {
+    try { db.exec(`ALTER TABLE contracts ADD COLUMN ${col}`); } catch {}
+  }
+
   seedUsers();
   seedContracts();
 }
