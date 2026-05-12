@@ -146,31 +146,20 @@ export default function ContractForm() {
   }
 
   // Auto-extract everything when a new PDF file is selected
+  // Uses Claude's native PDF support — works on scanned/image PDFs too
   async function handleFileSelect(file) {
     setPdfFile(file);
     setExtractResult(null);
     if (!file) return;
     setExtracting(true);
     try {
-      const fd1 = new FormData(); fd1.append('pdf', file);
-      const fd2 = new FormData(); fd2.append('pdf', file);
-      const [datesRes, clausesRes] = await Promise.allSettled([
-        api.post('/contracts/extract-dates', fd1, { headers: { 'Content-Type': 'multipart/form-data' } }),
-        api.post('/contracts/extract-clauses', fd2, { headers: { 'Content-Type': 'multipart/form-data' } }),
-      ]);
-      const combined = {};
-      if (datesRes.status === 'fulfilled') Object.assign(combined, datesRes.value.data);
-      if (clausesRes.status === 'fulfilled') Object.assign(combined, clausesRes.value.data);
-
-      // Surface API key error prominently
-      const apiKeyError = [datesRes, clausesRes].find(r => r.status === 'rejected' && r.reason?.response?.status === 503);
-      if (apiKeyError) {
-        setExtractResult({ ok: false, error: 'ANTHROPIC_API_KEY not set in Railway — add it in Variables to enable AI extraction.' });
-      } else {
-        applyExtracted(combined);
-      }
+      const fd = new FormData();
+      fd.append('pdf', file);
+      const res = await api.post('/contracts/extract-all-upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      applyExtracted(res.data);
     } catch (err) {
-      setExtractResult({ ok: false, error: 'Extraction failed. Check that ANTHROPIC_API_KEY is set in Railway.' });
+      const msg = err.response?.data?.error || 'Extraction failed.';
+      setExtractResult({ ok: false, error: msg });
     } finally {
       setExtracting(false);
     }

@@ -44,60 +44,72 @@ function refreshAllStatuses(db) {
   for (const c of contracts) update.run(computeStatus(c.end_date), c.id);
 }
 
-// POST extract dates from PDF
-router.post('/extract-dates', authenticateToken, extractUpload.single('pdf'), async (req, res) => {
+// ── Shared Claude PDF extraction helper ──────────────────────────────────────
+// Sends the PDF buffer directly to Claude (works on scanned/image PDFs too)
+async function extractAllFromBuffer(buffer) {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const message = await client.messages.create({
+    model: 'claude-opus-4-5',
+    max_tokens: 1500,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: buffer.toString('base64'),
+          },
+        },
+        {
+          type: 'text',
+          text: `You are a contract analyst. Read the contract document above and extract all of the following.
+
+Return ONLY a raw JSON object — no markdown, no code fences, no explanation:
+{
+  "start_date": "YYYY-MM-DD or null",
+  "end_date": "YYYY-MM-DD or null",
+  "termination_clause": "Brief plain-English summary of termination terms, or null",
+  "payment_terms": "Brief summary of payment terms and schedule, or null",
+  "commissions": "Commission rates and structure, or null",
+  "special_overrides": "Any special overrides, exceptions or non-standard clauses, or null",
+  "exclusivity": "exclusive" or "non-exclusive" or null
+}
+
+For dates look for: commencement date, effective date, start date, expiry date, termination date, end date, expires on, valid until.
+For exclusivity look for: exclusive, non-exclusive, sole, exclusivity clause.`,
+        },
+      ],
+    }],
+  });
+
+  const raw = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  const parsed = JSON.parse(raw);
+
+  return {
+    start_date: parsed.start_date || null,
+    end_date: parsed.end_date || null,
+    termination_clause: parsed.termination_clause || null,
+    payment_terms: parsed.payment_terms || null,
+    commissions: parsed.commissions || null,
+    special_overrides: parsed.special_overrides || null,
+    exclusivity: ['exclusive', 'non-exclusive'].includes(parsed.exclusivity) ? parsed.exclusivity : null,
+  };
+}
+
+// POST extract-all from an uploaded PDF (used when creating a new contract)
+router.post('/extract-all-upload', authenticateToken, extractUpload.single('pdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No PDF file provided' });
-
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured on the server' });
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured. Add it in Railway → Variables.' });
   }
-
-  let text;
   try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(req.file.buffer);
-    text = data.text;
+    res.json(await extractAllFromBuffer(req.file.buffer));
   } catch (err) {
-    return res.status(422).json({ error: 'Could not read PDF — file may be scanned or image-based' });
-  }
-
-  if (!text || text.trim().length < 20) {
-    return res.status(422).json({ error: 'PDF appears to contain no extractable text (may be a scanned document)' });
-  }
-
-  try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-    const message = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 256,
-      messages: [{
-        role: 'user',
-        content: `You are a contract analyst. Extract the contract start date and end/expiry date from the text below.
-
-Return ONLY a raw JSON object — no markdown, no explanation — in this exact format:
-{"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}
-
-If a date cannot be found, use null for that field.
-Look for terms like: "commencement date", "effective date", "start date", "term begins", "expiry date", "termination date", "end date", "expires on", "valid until".
-
-CONTRACT TEXT:
-${text.slice(0, 12000)}`,
-      }],
-    });
-
-    const raw = message.content[0].text.trim();
-    // Strip any accidental markdown code fences
-    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-
-    res.json({
-      start_date: parsed.start_date || null,
-      end_date: parsed.end_date || null,
-    });
-  } catch (err) {
-    console.error('Date extraction error:', err);
-    res.status(500).json({ error: 'Failed to extract dates from the document' });
+    console.error('extract-all-upload error:', err);
+    res.status(500).json({ error: 'AI extraction failed — ' + (err.message || 'unknown error') });
   }
 });
 
@@ -326,66 +338,22 @@ router.delete('/:id/documents/:docId', authenticateToken, requireEditor, (req, r
   res.json({ message: 'Document deleted' });
 });
 
-// POST extract key clauses from PDF
+// POST extract-clauses (kept for backwards compatibility — now uses Claude native PDF)
 router.post('/extract-clauses', authenticateToken, extractUpload.single('pdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No PDF file provided' });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
-
-  let text;
   try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(req.file.buffer);
-    text = data.text;
-  } catch {
-    return res.status(422).json({ error: 'Could not read PDF — file may be scanned or image-based' });
-  }
-
-  if (!text || text.trim().length < 20) {
-    return res.status(422).json({ error: 'PDF contains no extractable text' });
-  }
-
-  try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const message = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `You are a contract analyst. Extract the following from the contract text below.
-
-Return ONLY a raw JSON object with these exact keys (no markdown, no explanation):
-{
-  "termination_clause": "Brief summary of termination terms, or null",
-  "payment_terms": "Brief summary of payment terms and schedule, or null",
-  "commissions": "Commission rates and structure, or null",
-  "special_overrides": "Any special overrides, exceptions or non-standard clauses, or null",
-  "exclusivity": "exclusive" or "non-exclusive" or null
-}
-
-CONTRACT TEXT:
-${text.slice(0, 12000)}`,
-      }],
-    });
-
-    const raw = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    const parsed = JSON.parse(raw);
-    res.json({
-      termination_clause: parsed.termination_clause || null,
-      payment_terms: parsed.payment_terms || null,
-      commissions: parsed.commissions || null,
-      special_overrides: parsed.special_overrides || null,
-      exclusivity: ['exclusive', 'non-exclusive'].includes(parsed.exclusivity) ? parsed.exclusivity : null,
-    });
+    res.json(await extractAllFromBuffer(req.file.buffer));
   } catch (err) {
-    console.error('Clause extraction error:', err);
-    res.status(500).json({ error: 'Failed to extract clauses from the document' });
+    console.error('extract-clauses error:', err);
+    res.status(500).json({ error: 'AI extraction failed — ' + (err.message || 'unknown error') });
   }
 });
 
-// POST extract all fields from a contract's already-stored PDF (no file upload needed)
+// POST extract all fields from a contract's already-stored PDF
 router.post('/:id/extract-all', authenticateToken, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured on the server. Add it in Railway → Variables.' });
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured. Add it in Railway → Variables.' });
   }
 
   const db = getDb();
@@ -396,62 +364,11 @@ router.post('/:id/extract-all', authenticateToken, async (req, res) => {
   const filePath = path.join(uploadsDir, contract.pdf_path);
   if (!fs.existsSync(filePath)) return res.status(422).json({ error: 'PDF file not found on disk' });
 
-  let text;
   try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(fs.readFileSync(filePath));
-    text = data.text;
-  } catch {
-    return res.status(422).json({ error: 'Could not read PDF — file may be scanned or image-based' });
-  }
-
-  if (!text || text.trim().length < 20) {
-    return res.status(422).json({ error: 'PDF contains no extractable text (it may be a scanned image)' });
-  }
-
-  try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const message = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 1500,
-      messages: [{
-        role: 'user',
-        content: `You are a contract analyst. Extract ALL of the following from the contract text below.
-
-Return ONLY a raw JSON object — no markdown, no explanation — with these exact keys:
-{
-  "start_date": "YYYY-MM-DD or null",
-  "end_date": "YYYY-MM-DD or null",
-  "termination_clause": "Brief plain-English summary of termination terms, or null",
-  "payment_terms": "Brief summary of payment terms and schedule, or null",
-  "commissions": "Commission rates and structure, or null",
-  "special_overrides": "Any special overrides, exceptions or non-standard clauses, or null",
-  "exclusivity": "exclusive" or "non-exclusive" or null
-}
-
-For dates look for: commencement date, effective date, start date, expiry date, termination date, end date, expires on, valid until.
-For exclusivity look for: exclusive, non-exclusive, sole, exclusivity clause.
-
-CONTRACT TEXT:
-${text.slice(0, 14000)}`,
-      }],
-    });
-
-    const raw = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    const parsed = JSON.parse(raw);
-
-    res.json({
-      start_date: parsed.start_date || null,
-      end_date: parsed.end_date || null,
-      termination_clause: parsed.termination_clause || null,
-      payment_terms: parsed.payment_terms || null,
-      commissions: parsed.commissions || null,
-      special_overrides: parsed.special_overrides || null,
-      exclusivity: ['exclusive', 'non-exclusive'].includes(parsed.exclusivity) ? parsed.exclusivity : null,
-    });
+    res.json(await extractAllFromBuffer(fs.readFileSync(filePath)));
   } catch (err) {
     console.error('extract-all error:', err);
-    res.status(500).json({ error: 'AI extraction failed. Check server logs.' });
+    res.status(500).json({ error: 'AI extraction failed — ' + (err.message || 'unknown error') });
   }
 });
 
