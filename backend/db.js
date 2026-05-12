@@ -48,6 +48,18 @@ function initDb() {
     );
   `);
 
+  // Addendum documents table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contract_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      contract_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      label TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   // Migrations — safe to run on every start, errors are ignored if column exists
   const migrations = [
     'ALTER TABLE contracts ADD COLUMN contract_link TEXT',
@@ -55,6 +67,15 @@ function initDb() {
     'ALTER TABLE contracts ADD COLUMN partner_email TEXT',
     'ALTER TABLE contracts ADD COLUMN partner_position TEXT',
     'ALTER TABLE contracts ADD COLUMN partner_phone TEXT',
+    'ALTER TABLE contracts ADD COLUMN owner_email TEXT',
+    'ALTER TABLE contracts ADD COLUMN partnership_start_date TEXT',
+    'ALTER TABLE contracts ADD COLUMN countries TEXT',
+    'ALTER TABLE contracts ADD COLUMN products TEXT',
+    'ALTER TABLE contracts ADD COLUMN termination_clause TEXT',
+    'ALTER TABLE contracts ADD COLUMN payment_terms TEXT',
+    'ALTER TABLE contracts ADD COLUMN commissions TEXT',
+    'ALTER TABLE contracts ADD COLUMN special_overrides TEXT',
+    'ALTER TABLE contracts ADD COLUMN exclusivity TEXT',
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch {}

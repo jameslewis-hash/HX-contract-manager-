@@ -74,22 +74,24 @@ async function sendExpiryWarnings() {
     return;
   }
 
-  const recipientEmail = process.env.ALERT_EMAIL || process.env.SMTP_USER;
-  if (!recipientEmail || !process.env.SMTP_USER) {
+  if (!process.env.SMTP_USER) {
     console.log('[Cron] SMTP not configured — skipping email send. Contracts due for alert:', toAlert.map(a => a.contract.title).join(', '));
     return;
   }
 
+  const fallbackEmail = process.env.ALERT_EMAIL || process.env.SMTP_USER;
   const transporter = createTransporter();
 
   for (const { contract, daysLeft } of toAlert) {
+    // Send to the contract owner's email if set, otherwise fall back to ALERT_EMAIL
+    const to = contract.owner_email || fallbackEmail;
     await transporter.sendMail({
       from: `"HX Contract Manager" <${process.env.SMTP_USER}>`,
-      to: recipientEmail,
+      to,
       subject: `${daysLeft <= 30 ? 'URGENT: ' : ''}Contract Expiry: "${contract.title}" expires in ${daysLeft} days`,
       html: buildEmailHtml(contract, daysLeft),
     });
-    console.log(`[Cron] Sent ${daysLeft}-day warning for "${contract.title}" to ${recipientEmail}`);
+    console.log(`[Cron] Sent ${daysLeft}-day warning for "${contract.title}" to ${to}`);
   }
 }
 

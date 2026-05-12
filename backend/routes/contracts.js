@@ -155,8 +155,12 @@ router.get('/:id', authenticateToken, (req, res) => {
 
 // POST create
 router.post('/', authenticateToken, requireEditor, upload.single('pdf'), (req, res) => {
-  const { title, vendor, contract_value, start_date, end_date, notes, owner_name, contract_link,
-          partner_name, partner_email, partner_position, partner_phone } = req.body;
+  const {
+    title, vendor, contract_value, start_date, end_date, notes, owner_name, owner_email, contract_link,
+    partner_name, partner_email, partner_position, partner_phone,
+    partnership_start_date, countries, products,
+    termination_clause, payment_terms, commissions, special_overrides, exclusivity,
+  } = req.body;
 
   if (!title || !vendor || !start_date || !end_date) {
     return res.status(400).json({ error: 'title, vendor, start_date and end_date are required' });
@@ -164,9 +168,12 @@ router.post('/', authenticateToken, requireEditor, upload.single('pdf'), (req, r
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO contracts (title, vendor, contract_value, start_date, end_date, status, pdf_path, contract_link, notes, owner_name,
-      partner_name, partner_email, partner_position, partner_phone)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO contracts (
+      title, vendor, contract_value, start_date, end_date, status, pdf_path, contract_link, notes,
+      owner_name, owner_email, partner_name, partner_email, partner_position, partner_phone,
+      partnership_start_date, countries, products,
+      termination_clause, payment_terms, commissions, special_overrides, exclusivity
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title, vendor,
     contract_value ? parseFloat(contract_value) : null,
@@ -176,10 +183,19 @@ router.post('/', authenticateToken, requireEditor, upload.single('pdf'), (req, r
     contract_link || null,
     notes || null,
     owner_name || null,
+    owner_email || null,
     partner_name || null,
     partner_email || null,
     partner_position || null,
     partner_phone || null,
+    partnership_start_date || null,
+    countries || null,
+    products || null,
+    termination_clause || null,
+    payment_terms || null,
+    commissions || null,
+    special_overrides || null,
+    exclusivity || null,
   );
 
   res.status(201).json(db.prepare('SELECT * FROM contracts WHERE id = ?').get(result.lastInsertRowid));
@@ -191,8 +207,12 @@ router.put('/:id', authenticateToken, requireEditor, upload.single('pdf'), (req,
   const existing = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Contract not found' });
 
-  const { title, vendor, contract_value, start_date, end_date, notes, owner_name, contract_link,
-          partner_name, partner_email, partner_position, partner_phone } = req.body;
+  const {
+    title, vendor, contract_value, start_date, end_date, notes, owner_name, owner_email, contract_link,
+    partner_name, partner_email, partner_position, partner_phone,
+    partnership_start_date, countries, products,
+    termination_clause, payment_terms, commissions, special_overrides, exclusivity,
+  } = req.body;
 
   let pdf_path = existing.pdf_path;
   if (req.file) {
@@ -205,11 +225,16 @@ router.put('/:id', authenticateToken, requireEditor, upload.single('pdf'), (req,
 
   const newEndDate = end_date || existing.end_date;
 
+  const str = (val, fallback) => val !== undefined ? (val || null) : fallback;
+
   db.prepare(`
     UPDATE contracts SET
       title = ?, vendor = ?, contract_value = ?, start_date = ?, end_date = ?,
-      status = ?, pdf_path = ?, contract_link = ?, notes = ?, owner_name = ?,
+      status = ?, pdf_path = ?, contract_link = ?, notes = ?,
+      owner_name = ?, owner_email = ?,
       partner_name = ?, partner_email = ?, partner_position = ?, partner_phone = ?,
+      partnership_start_date = ?, countries = ?, products = ?,
+      termination_clause = ?, payment_terms = ?, commissions = ?, special_overrides = ?, exclusivity = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
@@ -220,32 +245,141 @@ router.put('/:id', authenticateToken, requireEditor, upload.single('pdf'), (req,
     newEndDate,
     computeStatus(newEndDate),
     pdf_path,
-    contract_link !== undefined ? (contract_link || null) : existing.contract_link,
-    notes !== undefined ? notes : existing.notes,
-    owner_name !== undefined ? owner_name : existing.owner_name,
-    partner_name !== undefined ? (partner_name || null) : existing.partner_name,
-    partner_email !== undefined ? (partner_email || null) : existing.partner_email,
-    partner_position !== undefined ? (partner_position || null) : existing.partner_position,
-    partner_phone !== undefined ? (partner_phone || null) : existing.partner_phone,
+    str(contract_link, existing.contract_link),
+    str(notes, existing.notes),
+    str(owner_name, existing.owner_name),
+    str(owner_email, existing.owner_email),
+    str(partner_name, existing.partner_name),
+    str(partner_email, existing.partner_email),
+    str(partner_position, existing.partner_position),
+    str(partner_phone, existing.partner_phone),
+    str(partnership_start_date, existing.partnership_start_date),
+    str(countries, existing.countries),
+    str(products, existing.products),
+    str(termination_clause, existing.termination_clause),
+    str(payment_terms, existing.payment_terms),
+    str(commissions, existing.commissions),
+    str(special_overrides, existing.special_overrides),
+    str(exclusivity, existing.exclusivity),
     req.params.id
   );
 
   res.json(db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id));
 });
 
-// DELETE
+// DELETE contract (and its documents)
 router.delete('/:id', authenticateToken, requireEditor, (req, res) => {
   const db = getDb();
   const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
+  // Delete main PDF
   if (contract.pdf_path) {
     const pdfPath = path.join(uploadsDir, contract.pdf_path);
     if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
   }
 
+  // Delete addendum files
+  const docs = db.prepare('SELECT * FROM contract_documents WHERE contract_id = ?').all(req.params.id);
+  for (const doc of docs) {
+    const fp = path.join(uploadsDir, doc.filename);
+    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  }
+  db.prepare('DELETE FROM contract_documents WHERE contract_id = ?').run(req.params.id);
+
   db.prepare('DELETE FROM contracts WHERE id = ?').run(req.params.id);
   res.json({ message: 'Contract deleted successfully' });
+});
+
+// --- Addendum document routes ---
+
+// GET documents for a contract
+router.get('/:id/documents', authenticateToken, (req, res) => {
+  const db = getDb();
+  const docs = db.prepare('SELECT * FROM contract_documents WHERE contract_id = ? ORDER BY created_at ASC').all(req.params.id);
+  res.json(docs);
+});
+
+// POST upload addendum
+router.post('/:id/documents', authenticateToken, requireEditor, upload.single('pdf'), (req, res) => {
+  const db = getDb();
+  const contract = db.prepare('SELECT id FROM contracts WHERE id = ?').get(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+
+  const result = db.prepare(
+    'INSERT INTO contract_documents (contract_id, filename, original_name, label) VALUES (?, ?, ?, ?)'
+  ).run(req.params.id, req.file.filename, req.file.originalname, req.body.label || null);
+
+  res.status(201).json(db.prepare('SELECT * FROM contract_documents WHERE id = ?').get(result.lastInsertRowid));
+});
+
+// DELETE addendum
+router.delete('/:id/documents/:docId', authenticateToken, requireEditor, (req, res) => {
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM contract_documents WHERE id = ? AND contract_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const fp = path.join(uploadsDir, doc.filename);
+  if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  db.prepare('DELETE FROM contract_documents WHERE id = ?').run(req.params.docId);
+  res.json({ message: 'Document deleted' });
+});
+
+// POST extract key clauses from PDF
+router.post('/extract-clauses', authenticateToken, extractUpload.single('pdf'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No PDF file provided' });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
+
+  let text;
+  try {
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(req.file.buffer);
+    text = data.text;
+  } catch {
+    return res.status(422).json({ error: 'Could not read PDF — file may be scanned or image-based' });
+  }
+
+  if (!text || text.trim().length < 20) {
+    return res.status(422).json({ error: 'PDF contains no extractable text' });
+  }
+
+  try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await client.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `You are a contract analyst. Extract the following from the contract text below.
+
+Return ONLY a raw JSON object with these exact keys (no markdown, no explanation):
+{
+  "termination_clause": "Brief summary of termination terms, or null",
+  "payment_terms": "Brief summary of payment terms and schedule, or null",
+  "commissions": "Commission rates and structure, or null",
+  "special_overrides": "Any special overrides, exceptions or non-standard clauses, or null",
+  "exclusivity": "exclusive" or "non-exclusive" or null
+}
+
+CONTRACT TEXT:
+${text.slice(0, 12000)}`,
+      }],
+    });
+
+    const raw = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    const parsed = JSON.parse(raw);
+    res.json({
+      termination_clause: parsed.termination_clause || null,
+      payment_terms: parsed.payment_terms || null,
+      commissions: parsed.commissions || null,
+      special_overrides: parsed.special_overrides || null,
+      exclusivity: ['exclusive', 'non-exclusive'].includes(parsed.exclusivity) ? parsed.exclusivity : null,
+    });
+  } catch (err) {
+    console.error('Clause extraction error:', err);
+    res.status(500).json({ error: 'Failed to extract clauses from the document' });
+  }
 });
 
 module.exports = router;
