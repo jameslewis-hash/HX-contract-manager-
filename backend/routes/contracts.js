@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { getDb, computeStatus } = require('../db');
 const { authenticateToken, requireEditor } = require('../middleware/auth');
-const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const router = express.Router();
 
@@ -44,28 +44,20 @@ function refreshAllStatuses(db) {
   for (const c of contracts) update.run(computeStatus(c.end_date), c.id);
 }
 
-// ── Shared Claude PDF extraction helper ──────────────────────────────────────
-// Sends the PDF buffer directly to Claude (works on scanned/image PDFs too)
+// ── Shared Gemini PDF extraction helper ──────────────────────────────────────
+// Sends the PDF buffer directly to Gemini (works on scanned/image PDFs too)
 async function extractAllFromBuffer(buffer) {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-  const message = await client.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 1500,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: 'application/pdf',
-            data: buffer.toString('base64'),
-          },
-        },
-        {
-          type: 'text',
-          text: `You are a contract analyst. Read the contract document above and extract all of the following.
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        data: buffer.toString('base64'),
+        mimeType: 'application/pdf',
+      },
+    },
+    `You are a contract analyst. Read the contract document above and extract all of the following.
 
 Return ONLY a raw JSON object — no markdown, no code fences, no explanation:
 {
@@ -80,12 +72,9 @@ Return ONLY a raw JSON object — no markdown, no code fences, no explanation:
 
 For dates look for: commencement date, effective date, start date, expiry date, termination date, end date, expires on, valid until.
 For exclusivity look for: exclusive, non-exclusive, sole, exclusivity clause.`,
-        },
-      ],
-    }],
-  });
+  ]);
 
-  const raw = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  const raw = result.response.text().trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
   const parsed = JSON.parse(raw);
 
   return {
@@ -102,8 +91,8 @@ For exclusivity look for: exclusive, non-exclusive, sole, exclusivity clause.`,
 // POST extract-all from an uploaded PDF (used when creating a new contract)
 router.post('/extract-all-upload', authenticateToken, extractUpload.single('pdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No PDF file provided' });
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured. Add it in Railway → Variables.' });
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'GEMINI_API_KEY is not configured. Add it in Railway → Variables.' });
   }
   try {
     res.json(await extractAllFromBuffer(req.file.buffer));
@@ -341,7 +330,7 @@ router.delete('/:id/documents/:docId', authenticateToken, requireEditor, (req, r
 // POST extract-clauses (kept for backwards compatibility — now uses Claude native PDF)
 router.post('/extract-clauses', authenticateToken, extractUpload.single('pdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No PDF file provided' });
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
   try {
     res.json(await extractAllFromBuffer(req.file.buffer));
   } catch (err) {
@@ -352,8 +341,8 @@ router.post('/extract-clauses', authenticateToken, extractUpload.single('pdf'), 
 
 // POST extract all fields from a contract's already-stored PDF
 router.post('/:id/extract-all', authenticateToken, async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured. Add it in Railway → Variables.' });
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'GEMINI_API_KEY is not configured. Add it in Railway → Variables.' });
   }
 
   const db = getDb();
