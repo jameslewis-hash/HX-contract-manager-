@@ -382,4 +382,77 @@ ${text.slice(0, 12000)}`,
   }
 });
 
+// POST extract all fields from a contract's already-stored PDF (no file upload needed)
+router.post('/:id/extract-all', authenticateToken, async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured on the server. Add it in Railway → Variables.' });
+  }
+
+  const db = getDb();
+  const contract = db.prepare('SELECT pdf_path FROM contracts WHERE id = ?').get(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (!contract.pdf_path) return res.status(422).json({ error: 'No PDF uploaded for this contract' });
+
+  const filePath = path.join(uploadsDir, contract.pdf_path);
+  if (!fs.existsSync(filePath)) return res.status(422).json({ error: 'PDF file not found on disk' });
+
+  let text;
+  try {
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(fs.readFileSync(filePath));
+    text = data.text;
+  } catch {
+    return res.status(422).json({ error: 'Could not read PDF — file may be scanned or image-based' });
+  }
+
+  if (!text || text.trim().length < 20) {
+    return res.status(422).json({ error: 'PDF contains no extractable text (it may be a scanned image)' });
+  }
+
+  try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await client.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 1500,
+      messages: [{
+        role: 'user',
+        content: `You are a contract analyst. Extract ALL of the following from the contract text below.
+
+Return ONLY a raw JSON object — no markdown, no explanation — with these exact keys:
+{
+  "start_date": "YYYY-MM-DD or null",
+  "end_date": "YYYY-MM-DD or null",
+  "termination_clause": "Brief plain-English summary of termination terms, or null",
+  "payment_terms": "Brief summary of payment terms and schedule, or null",
+  "commissions": "Commission rates and structure, or null",
+  "special_overrides": "Any special overrides, exceptions or non-standard clauses, or null",
+  "exclusivity": "exclusive" or "non-exclusive" or null
+}
+
+For dates look for: commencement date, effective date, start date, expiry date, termination date, end date, expires on, valid until.
+For exclusivity look for: exclusive, non-exclusive, sole, exclusivity clause.
+
+CONTRACT TEXT:
+${text.slice(0, 14000)}`,
+      }],
+    });
+
+    const raw = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    const parsed = JSON.parse(raw);
+
+    res.json({
+      start_date: parsed.start_date || null,
+      end_date: parsed.end_date || null,
+      termination_clause: parsed.termination_clause || null,
+      payment_terms: parsed.payment_terms || null,
+      commissions: parsed.commissions || null,
+      special_overrides: parsed.special_overrides || null,
+      exclusivity: ['exclusive', 'non-exclusive'].includes(parsed.exclusivity) ? parsed.exclusivity : null,
+    });
+  } catch (err) {
+    console.error('extract-all error:', err);
+    res.status(500).json({ error: 'AI extraction failed. Check server logs.' });
+  }
+});
+
 module.exports = router;

@@ -71,10 +71,9 @@ export default function ContractForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const [extractingDates, setExtractingDates] = useState(false);
-  const [extractingClauses, setExtractingClauses] = useState(false);
-  const [dateExtractResult, setDateExtractResult] = useState(null);
-  const [clauseExtractResult, setClauseExtractResult] = useState(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState(null); // { ok, fields, error }
+  const [extractingFromSaved, setExtractingFromSaved] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'editor') { navigate('/contracts'); return; }
@@ -137,51 +136,59 @@ export default function ContractForm() {
     }));
   }
 
-  async function handleExtractDates() {
-    if (!pdfFile) return;
-    setExtractingDates(true);
-    setDateExtractResult(null);
-    const data = new FormData();
-    data.append('pdf', pdfFile);
+  function applyExtracted(data) {
+    const fields = ['start_date', 'end_date', 'termination_clause', 'payment_terms', 'commissions', 'special_overrides', 'exclusivity'];
+    const updates = {};
+    fields.forEach(f => { if (data[f]) updates[f] = data[f]; });
+    setForm(prev => ({ ...prev, ...updates }));
+    const count = Object.keys(updates).length;
+    setExtractResult({ ok: count > 0, count, error: count === 0 ? 'No data could be extracted from this PDF' : null });
+  }
+
+  // Auto-extract everything when a new PDF file is selected
+  async function handleFileSelect(file) {
+    setPdfFile(file);
+    setExtractResult(null);
+    if (!file) return;
+    setExtracting(true);
     try {
-      const res = await api.post('/contracts/extract-dates', data, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const { start_date, end_date } = res.data;
-      if (start_date || end_date) {
-        setForm(f => ({ ...f, ...(start_date ? { start_date } : {}), ...(end_date ? { end_date } : {}) }));
-        setDateExtractResult(start_date && end_date ? 'success' : 'partial');
+      const fd1 = new FormData(); fd1.append('pdf', file);
+      const fd2 = new FormData(); fd2.append('pdf', file);
+      const [datesRes, clausesRes] = await Promise.allSettled([
+        api.post('/contracts/extract-dates', fd1, { headers: { 'Content-Type': 'multipart/form-data' } }),
+        api.post('/contracts/extract-clauses', fd2, { headers: { 'Content-Type': 'multipart/form-data' } }),
+      ]);
+      const combined = {};
+      if (datesRes.status === 'fulfilled') Object.assign(combined, datesRes.value.data);
+      if (clausesRes.status === 'fulfilled') Object.assign(combined, clausesRes.value.data);
+
+      // Surface API key error prominently
+      const apiKeyError = [datesRes, clausesRes].find(r => r.status === 'rejected' && r.reason?.response?.status === 503);
+      if (apiKeyError) {
+        setExtractResult({ ok: false, error: 'ANTHROPIC_API_KEY not set in Railway — add it in Variables to enable AI extraction.' });
       } else {
-        setDateExtractResult('error');
+        applyExtracted(combined);
       }
-    } catch {
-      setDateExtractResult('error');
+    } catch (err) {
+      setExtractResult({ ok: false, error: 'Extraction failed. Check that ANTHROPIC_API_KEY is set in Railway.' });
     } finally {
-      setExtractingDates(false);
+      setExtracting(false);
     }
   }
 
-  async function handleExtractClauses() {
-    if (!pdfFile) return;
-    setExtractingClauses(true);
-    setClauseExtractResult(null);
-    const data = new FormData();
-    data.append('pdf', pdfFile);
+  // Extract from already-saved PDF (edit mode)
+  async function handleExtractFromSaved() {
+    if (!id) return;
+    setExtractingFromSaved(true);
+    setExtractResult(null);
     try {
-      const res = await api.post('/contracts/extract-clauses', data, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const { termination_clause, payment_terms, commissions, special_overrides, exclusivity } = res.data;
-      setForm(f => ({
-        ...f,
-        ...(termination_clause ? { termination_clause } : {}),
-        ...(payment_terms ? { payment_terms } : {}),
-        ...(commissions ? { commissions } : {}),
-        ...(special_overrides ? { special_overrides } : {}),
-        ...(exclusivity ? { exclusivity } : {}),
-      }));
-      const found = [termination_clause, payment_terms, commissions, special_overrides, exclusivity].filter(Boolean).length;
-      setClauseExtractResult(found > 0 ? (found >= 3 ? 'success' : 'partial') : 'error');
-    } catch {
-      setClauseExtractResult('error');
+      const res = await api.post(`/contracts/${id}/extract-all`);
+      applyExtracted(res.data);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Extraction failed';
+      setExtractResult({ ok: false, error: msg });
     } finally {
-      setExtractingClauses(false);
+      setExtractingFromSaved(false);
     }
   }
 
@@ -249,17 +256,25 @@ export default function ContractForm() {
     </div>
   );
 
-  const extractFeedback = (result, successMsg, partialMsg) => result && (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, marginTop: 10,
-      background: result === 'error' ? 'rgba(239,68,68,0.08)' : result === 'partial' ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
-      border: `1px solid ${result === 'error' ? 'rgba(239,68,68,0.3)' : result === 'partial' ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
-      color: result === 'error' ? '#ef4444' : result === 'partial' ? '#f59e0b' : '#22c55e',
-    }}>
-      {result === 'success' ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
-      {result === 'success' ? successMsg : result === 'partial' ? partialMsg : 'Nothing found — document may be scanned or text not present'}
-    </div>
-  );
+  const ExtractBanner = () => {
+    if (!extractResult) return null;
+    const ok = extractResult.ok;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 16,
+        background: ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+        border: `1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+        color: ok ? '#22c55e' : '#ef4444',
+      }}>
+        {ok ? <CheckCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />}
+        <span>
+          {ok
+            ? `AI extracted ${extractResult.count} field${extractResult.count !== 1 ? 's' : ''} from the PDF — review below and fill in anything missing.`
+            : extractResult.error}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div style={{ padding: '32px', maxWidth: 800 }} className="fade-in">
@@ -375,21 +390,25 @@ export default function ContractForm() {
             <ScrollText size={16} color="#FDDC06" />
             <h2 style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>Key Clauses</h2>
           </div>
-          <p style={{ fontSize: 13, color: '#7060a0', marginBottom: 16 }}>Enter manually or extract automatically from the uploaded PDF.</p>
+          <p style={{ fontSize: 13, color: '#7060a0', marginBottom: 16 }}>Enter manually, or use AI to extract automatically from the PDF.</p>
 
-          {pdfFile && (
+          <ExtractBanner />
+
+          {(pdfFile || (isEdit && existingPdf)) && (
             <div style={{ marginBottom: 16 }}>
-              <button type="button" onClick={handleExtractClauses} disabled={extractingClauses} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
-                background: extractingClauses ? 'rgba(84,46,145,0.2)' : 'rgba(84,46,145,0.15)',
-                border: '1px solid #542E91', borderRadius: 8,
-                color: extractingClauses ? '#7060a0' : '#FDDC06',
-                fontSize: 13, fontWeight: 700, cursor: extractingClauses ? 'not-allowed' : 'pointer',
-              }}>
+              <button
+                type="button"
+                onClick={pdfFile ? () => handleFileSelect(pdfFile) : handleExtractFromSaved}
+                disabled={extracting || extractingFromSaved}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 16px',
+                  background: 'rgba(84,46,145,0.15)', border: '1px solid #542E91', borderRadius: 8,
+                  color: (extracting || extractingFromSaved) ? '#7060a0' : '#FDDC06',
+                  fontSize: 13, fontWeight: 700, cursor: (extracting || extractingFromSaved) ? 'not-allowed' : 'pointer',
+                }}>
                 <Sparkles size={14} />
-                {extractingClauses ? 'Extracting clauses with AI…' : 'Extract key clauses from PDF'}
+                {(extracting || extractingFromSaved) ? 'Extracting with AI — this may take a moment…' : 'AI extract dates & key clauses from PDF'}
               </button>
-              {extractFeedback(clauseExtractResult, 'Clauses extracted successfully.', 'Some clauses found — check and complete the rest manually.')}
             </div>
           )}
 
@@ -474,34 +493,23 @@ export default function ContractForm() {
             )}
 
             {pdfFile ? (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, marginBottom: 10 }}>
-                  <FileText size={16} color="#22c55e" />
-                  <span style={{ fontSize: 13, color: '#22c55e', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pdfFile.name}</span>
-                  <button type="button" onClick={() => { setPdfFile(null); setDateExtractResult(null); setClauseExtractResult(null); }} style={{ background: 'none', color: '#b0a0cc', cursor: 'pointer', display: 'flex' }}>
-                    <X size={14} />
-                  </button>
-                </div>
-                {/* Extract dates */}
-                <button type="button" onClick={handleExtractDates} disabled={extractingDates} style={{
-                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 16px', marginBottom: 8,
-                  background: 'rgba(84,46,145,0.15)', border: '1px solid #542E91', borderRadius: 8,
-                  color: extractingDates ? '#7060a0' : '#FDDC06', fontSize: 13, fontWeight: 700,
-                  cursor: extractingDates ? 'not-allowed' : 'pointer',
-                }}>
-                  <Sparkles size={14} />
-                  {extractingDates ? 'Extracting dates with AI…' : 'Extract start & end dates from PDF'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8 }}>
+                <FileText size={16} color="#22c55e" />
+                <span style={{ fontSize: 13, color: '#22c55e', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {extracting ? <em>Extracting data with AI…</em> : pdfFile.name}
+                </span>
+                <button type="button" onClick={() => { handleFileSelect(null); setExtractResult(null); }} style={{ background: 'none', color: '#b0a0cc', cursor: 'pointer', display: 'flex' }}>
+                  <X size={14} />
                 </button>
-                {extractFeedback(dateExtractResult, 'Dates extracted.', 'One date found — check the other.')}
-              </>
+              </div>
             ) : (
               <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '28px', border: '2px dashed #3d2870', borderRadius: 8, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = '#542E91'}
                 onMouseLeave={e => e.currentTarget.style.borderColor = '#3d2870'}>
                 <Upload size={22} color="#7060a0" />
                 <span style={{ fontSize: 14, color: '#b0a0cc', fontWeight: 600 }}>Click to upload PDF</span>
-                <span style={{ fontSize: 12, color: '#7060a0' }}>PDF only, max 20MB</span>
-                <input type="file" accept="application/pdf" onChange={e => setPdfFile(e.target.files[0] || null)} style={{ display: 'none' }} />
+                <span style={{ fontSize: 12, color: '#7060a0' }}>Dates & clauses will be extracted automatically · PDF only, max 20MB</span>
+                <input type="file" accept="application/pdf" onChange={e => handleFileSelect(e.target.files[0] || null)} style={{ display: 'none' }} />
               </label>
             )}
           </div>

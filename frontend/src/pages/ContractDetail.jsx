@@ -4,6 +4,7 @@ import {
   ArrowLeft, Edit, Trash2, Calendar, User, Briefcase, DollarSign, FileText,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink, Users, Mail,
   Phone, BadgeCheck, Globe, Package, ScrollText, Search, Download, X, Paperclip,
+  Sparkles, CheckCircle, AlertCircle,
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
@@ -68,6 +69,9 @@ export default function ContractDetail() {
   const [pdfScale, setPdfScale] = useState(1.0);
   const [pdfDocument, setPdfDocument] = useState(null);
 
+  const [aiExtracting, setAiExtracting] = useState(false);
+  const [aiResult, setAiResult] = useState(null); // { ok, message }
+
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState(null); // null = not searched, [] = no results, [n,...] = pages
   const [searching, setSearching] = useState(false);
@@ -84,6 +88,34 @@ export default function ContractDetail() {
       .catch(() => navigate('/contracts'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  async function handleAiExtract() {
+    setAiExtracting(true);
+    setAiResult(null);
+    try {
+      const extractRes = await api.post(`/contracts/${id}/extract-all`);
+      const data = extractRes.data;
+
+      // Build update payload with only non-null extracted values
+      const updates = {};
+      const fieldMap = { start_date: 'start_date', end_date: 'end_date', termination_clause: 'termination_clause', payment_terms: 'payment_terms', commissions: 'commissions', special_overrides: 'special_overrides', exclusivity: 'exclusivity' };
+      Object.entries(fieldMap).forEach(([k]) => { if (data[k]) updates[k] = data[k]; });
+
+      if (Object.keys(updates).length === 0) {
+        setAiResult({ ok: false, message: 'No data could be extracted. The PDF may be a scanned image.' });
+        return;
+      }
+
+      await api.put(`/contracts/${id}`, updates);
+      const refreshed = await api.get(`/contracts/${id}`);
+      setContract(refreshed.data);
+      setAiResult({ ok: true, message: `${Object.keys(updates).length} field${Object.keys(updates).length !== 1 ? 's' : ''} updated from PDF.` });
+    } catch (err) {
+      setAiResult({ ok: false, message: err.response?.data?.error || 'AI extraction failed.' });
+    } finally {
+      setAiExtracting(false);
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -160,17 +192,43 @@ export default function ContractDetail() {
         <Link to="/contracts" style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#b0a0cc', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
           <ArrowLeft size={15} />Back to contracts
         </Link>
-        {user?.role === 'editor' && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Link to={`/contracts/${id}/edit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', background: '#542E91', color: '#FDDC06', borderRadius: 8, fontSize: 13, fontWeight: 800, textDecoration: 'none' }}>
-              <Edit size={14} />Edit
-            </Link>
-            <button onClick={() => setShowDeleteConfirm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', borderRadius: 8, fontSize: 13, fontWeight: 800, border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer' }}>
-              <Trash2 size={14} />Delete
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {contract.pdf_path && (
+            <button
+              onClick={handleAiExtract}
+              disabled={aiExtracting}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', background: 'rgba(84,46,145,0.2)', color: aiExtracting ? '#7060a0' : '#FDDC06', borderRadius: 8, fontSize: 13, fontWeight: 800, border: '1px solid #542E91', cursor: aiExtracting ? 'not-allowed' : 'pointer' }}
+            >
+              <Sparkles size={14} />
+              {aiExtracting ? 'Extracting…' : 'AI Extract from PDF'}
             </button>
-          </div>
-        )}
+          )}
+          {user?.role === 'editor' && (
+            <>
+              <Link to={`/contracts/${id}/edit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', background: '#542E91', color: '#FDDC06', borderRadius: 8, fontSize: 13, fontWeight: 800, textDecoration: 'none' }}>
+                <Edit size={14} />Edit
+              </Link>
+              <button onClick={() => setShowDeleteConfirm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', borderRadius: 8, fontSize: 13, fontWeight: 800, border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer' }}>
+                <Trash2 size={14} />Delete
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* AI extract result banner */}
+      {aiResult && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, marginBottom: 16, fontSize: 13, fontWeight: 600,
+          background: aiResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+          border: `1px solid ${aiResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          color: aiResult.ok ? '#22c55e' : '#ef4444',
+        }}>
+          {aiResult.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
+          {aiResult.message}
+          <button onClick={() => setAiResult(null)} style={{ marginLeft: 'auto', background: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.6 }}><X size={14} /></button>
+        </div>
+      )}
 
       {/* Delete confirm modal */}
       {showDeleteConfirm && (
